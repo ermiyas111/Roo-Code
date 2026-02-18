@@ -67,6 +67,7 @@ export const toolParamNames = [
 	"replace_all", // edit tool parameter for replacing all occurrences
 	"expected_replacements", // edit_file parameter for multiple occurrences
 	"artifact_id", // read_command_output parameter
+	"intent_id", // select_active_intent parameter
 	"search", // read_command_output parameter for grep-like search
 	"offset", // read_command_output and read_file parameter
 	"limit", // read_command_output and read_file parameter
@@ -92,6 +93,7 @@ export type NativeToolArgs = {
 	access_mcp_resource: { server_name: string; uri: string }
 	read_file: import("@roo-code/types").ReadFileToolParams
 	read_command_output: { artifact_id: string; search?: string; offset?: number; limit?: number }
+	select_active_intent: { intent_id: string }
 	attempt_completion: { result: string }
 	execute_command: { command: string; cwd?: string }
 	apply_diff: { path: string; diff: string }
@@ -232,6 +234,11 @@ export interface AttemptCompletionToolUse extends ToolUse<"attempt_completion"> 
 	params: Partial<Pick<Record<ToolParamName, string>, "result">>
 }
 
+export interface SelectActiveIntentToolUse extends ToolUse<"select_active_intent"> {
+	name: "select_active_intent"
+	params: Partial<Pick<Record<ToolParamName, string>, "intent_id">>
+}
+
 export interface SwitchModeToolUse extends ToolUse<"switch_mode"> {
 	name: "switch_mode"
 	params: Partial<Pick<Record<ToolParamName, string>, "mode_slug" | "reason">>
@@ -268,6 +275,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	execute_command: "run commands",
 	read_file: "read files",
 	read_command_output: "read command output",
+	select_active_intent: "select active intent",
 	write_to_file: "write files",
 	apply_diff: "apply changes",
 	edit: "edit files",
@@ -315,6 +323,7 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 // Tools that are always available to all modes.
 export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"ask_followup_question",
+	"select_active_intent",
 	"attempt_completion",
 	"switch_mode",
 	"new_task",

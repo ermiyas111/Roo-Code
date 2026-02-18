@@ -132,6 +132,7 @@ import { AutoApprovalHandler, checkAutoApproval } from "../auto-approval"
 import { MessageManager } from "../message-manager"
 import { validateAndFixToolResultIds } from "./validateToolResultIds"
 import { mergeConsecutiveApiMessages } from "./mergeConsecutiveApiMessages"
+import { getIntentContextForPrompt } from "../../hooks/intentHooks"
 
 const MAX_EXPONENTIAL_BACKOFF_SECONDS = 600 // 10 minutes
 const DEFAULT_USAGE_COLLECTION_TIMEOUT_MS = 5000 // 5 seconds
@@ -3789,7 +3790,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 			const modelInfo = this.api.getModel().info
 
-			return SYSTEM_PROMPT(
+			const basePrompt = await SYSTEM_PROMPT(
 				provider.context,
 				this.cwd,
 				false,
@@ -3816,6 +3817,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				this.api.getModel().id,
 				provider.getSkillsManager(),
 			)
+
+			const intentRuntimeContext = getIntentContextForPrompt(this)
+			if (!intentRuntimeContext) {
+				return basePrompt
+			}
+
+			return `${basePrompt}\n\n${intentRuntimeContext}`
 		})()
 	}
 

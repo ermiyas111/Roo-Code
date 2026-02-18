@@ -27,6 +27,7 @@ import { executeCommandTool } from "../tools/ExecuteCommandTool"
 import { useMcpToolTool } from "../tools/UseMcpToolTool"
 import { accessMcpResourceTool } from "../tools/accessMcpResourceTool"
 import { askFollowupQuestionTool } from "../tools/AskFollowupQuestionTool"
+import { selectActiveIntentTool } from "../tools/SelectActiveIntentTool"
 import { switchModeTool } from "../tools/SwitchModeTool"
 import { attemptCompletionTool, AttemptCompletionCallbacks } from "../tools/AttemptCompletionTool"
 import { newTaskTool } from "../tools/NewTaskTool"
@@ -37,6 +38,7 @@ import { generateImageTool } from "../tools/GenerateImageTool"
 import { applyDiffTool as applyDiffToolClass } from "../tools/ApplyDiffTool"
 import { isValidToolName, validateToolUse } from "../tools/validateToolUse"
 import { codebaseSearchTool } from "../tools/CodebaseSearchTool"
+import { runIntentGate } from "../../hooks/intentHooks"
 
 import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
@@ -361,6 +363,8 @@ export async function presentAssistantMessage(cline: Task) {
 						return `[${block.name} for '${block.params.server_name}']`
 					case "ask_followup_question":
 						return `[${block.name} for '${block.params.question}']`
+					case "select_active_intent":
+						return `[${block.name} for '${block.params.intent_id}']`
 					case "attempt_completion":
 						return `[${block.name}]`
 					case "switch_mode":
@@ -625,6 +629,17 @@ export async function presentAssistantMessage(cline: Task) {
 
 			// Check for identical consecutive tool calls.
 			if (!block.partial) {
+				const gate = await runIntentGate(cline, block.name as ToolName)
+				if (!gate.allowed) {
+					cline.consecutiveMistakeCount++
+					cline.recordToolError(block.name as ToolName, gate.error)
+					pushToolResult(formatResponse.toolError(gate.error || "You must cite a valid active Intent ID."))
+					break
+				}
+			}
+
+			// Check for identical consecutive tool calls.
+			if (!block.partial) {
 				// Use the detector to check for repetition, passing the ToolUse
 				// block directly.
 				const repetitionCheck = cline.toolRepetitionDetector.check(block)
@@ -791,6 +806,13 @@ export async function presentAssistantMessage(cline: Task) {
 					break
 				case "ask_followup_question":
 					await askFollowupQuestionTool.handle(cline, block as ToolUse<"ask_followup_question">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+					})
+					break
+				case "select_active_intent":
+					await selectActiveIntentTool.handle(cline, block as ToolUse<"select_active_intent">, {
 						askApproval,
 						handleError,
 						pushToolResult,
