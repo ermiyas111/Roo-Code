@@ -30,7 +30,15 @@ type ActiveIntent = {
 	updated_at?: string
 }
 
+type SpecIntentDetails = {
+	owned_scope: string[]
+	constraints: string[]
+	acceptance_criteria: string[]
+}
+
 const REQUIREMENT_ID_REGEX = /\bT\d{3,}\b/gi
+const INTENT_ID_REGEX = /\bINT-\d{3,}\b/gi
+const SPEC_PLACEHOLDER = "None defined"
 
 function tokenize(value: string): string[] {
 	return value
@@ -172,7 +180,7 @@ async function ensureOrchestrationTodo(
 		return undefined
 	}
 
-	const sourceTasksPath = path.join(workspaceRoot, "specs", branchName, "tasks.md")
+	const sourceTasksPath = path.join(workspaceRoot, ".specify", branchName, "tasks.md")
 	const sourceTasksContent = await readTasksMarkdown(sourceTasksPath)
 	if (!sourceTasksContent) {
 		return undefined
@@ -247,6 +255,181 @@ function deriveIntentId(requirementId: string | undefined, intents: ActiveIntent
 	return "INT-001"
 }
 
+function deriveRequirementIdFromIntentId(intentId: string): string | undefined {
+	const numeric = intentId.match(/\d+/)?.[0]
+	if (!numeric) {
+		return undefined
+	}
+
+	return `T${numeric.padStart(3, "0")}`
+}
+
+function normalizeList(values: string[]): string[] {
+	const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0)
+	return cleaned.length > 0 ? cleaned : [SPEC_PLACEHOLDER]
+}
+
+function extractListFromYamlBlock(content: string, keys: string[]): string[] {
+	for (const key of keys) {
+		const keyPattern = new RegExp(`^\\s*${key}\\s*:\\s*$`, "im")
+		const keyMatch = keyPattern.exec(content)
+		if (!keyMatch) {
+			continue
+		}
+
+		const tail = content.slice(keyMatch.index + keyMatch[0].length)
+		const lines = tail.split(/\r?\n/)
+		const values: string[] = []
+		for (const line of lines) {
+			if (/^\s*[A-Za-z_][A-Za-z0-9_\-]*\s*:\s*/.test(line)) {
+				break
+			}
+			const itemMatch = line.match(/^\s*-\s+(.*)$/)
+			if (itemMatch) {
+				values.push(itemMatch[1].trim())
+			}
+		}
+
+		return values
+	}
+
+	return []
+}
+
+function extractListFromMarkdownSection(content: string, headers: string[]): string[] {
+	const lines = content.split(/\r?\n/)
+	let inSection = false
+	const values: string[] = []
+
+	for (const rawLine of lines) {
+		const line = rawLine.trim()
+		const headerMatch = line.match(/^#{1,6}\s+(.+)$/)
+		if (headerMatch) {
+			const normalizedHeader = headerMatch[1]
+				.toLowerCase()
+				.replace(/[^a-z_\s]/g, "")
+				.trim()
+			const isTarget = headers.some((header) => normalizedHeader === header || normalizedHeader.includes(header))
+			if (isTarget) {
+				inSection = true
+				continue
+			}
+
+			if (inSection) {
+				break
+			}
+		}
+
+		if (!inSection) {
+			continue
+		}
+
+		const bulletMatch = line.match(/^[-*]\s+(.*)$/)
+		if (bulletMatch) {
+			values.push(bulletMatch[1].trim())
+		}
+	}
+
+	return values
+}
+
+function parseSpecIntentDetails(content: string): SpecIntentDetails {
+	const ownedScope = normalizeList([
+		...extractListFromYamlBlock(content, ["owned_scope", "scope"]),
+		...extractListFromMarkdownSection(content, ["owned scope", "scope"]),
+	])
+
+	const constraints = normalizeList([
+		...extractListFromYamlBlock(content, ["constraints"]),
+		...extractListFromMarkdownSection(content, ["constraints"]),
+	])
+
+	const acceptanceCriteria = normalizeList([
+		...extractListFromYamlBlock(content, ["acceptance_criteria"]),
+		...extractListFromMarkdownSection(content, ["acceptance criteria", "acceptance_criteria"]),
+	])
+
+	return {
+		owned_scope: ownedScope,
+		constraints,
+		acceptance_criteria: acceptanceCriteria,
+	}
+}
+
+async function collectFilesRecursively(rootPath: string): Promise<string[]> {
+	const results: string[] = []
+
+	async function walk(currentPath: string): Promise<void> {
+		let entries
+		try {
+			entries = await fs.readdir(currentPath, { withFileTypes: true })
+		} catch {
+			return
+		}
+
+		for (const entry of entries) {
+			const fullPath = path.join(currentPath, entry.name)
+			if (entry.isDirectory()) {
+				await walk(fullPath)
+				continue
+			}
+
+			if (entry.isFile() && /\.(md|markdown|ya?ml|txt)$/i.test(entry.name)) {
+				results.push(fullPath)
+			}
+		}
+	}
+
+	await walk(rootPath)
+	return results
+}
+
+async function findSpecDetails(
+	workspaceRoot: string,
+	intentId: string,
+	requirementId?: string,
+): Promise<SpecIntentDetails> {
+	const specifyRoot = path.join(workspaceRoot, ".specify")
+	if (!(await fileExists(specifyRoot))) {
+		return {
+			owned_scope: [SPEC_PLACEHOLDER],
+			constraints: [SPEC_PLACEHOLDER],
+			acceptance_criteria: [SPEC_PLACEHOLDER],
+		}
+	}
+
+	const resolvedRequirementId = requirementId ?? deriveRequirementIdFromIntentId(intentId)
+	const candidates = await collectFilesRecursively(specifyRoot)
+
+	let selectedContent: string | undefined
+	for (const filePath of candidates) {
+		const content = await readTasksMarkdown(filePath)
+		if (!content) {
+			continue
+		}
+
+		const hasRequirement = resolvedRequirementId
+			? content.toUpperCase().includes(resolvedRequirementId.toUpperCase())
+			: false
+		const hasIntentId = content.toUpperCase().includes(intentId.toUpperCase())
+
+		if (hasRequirement || hasIntentId) {
+			selectedContent = content
+			break
+		}
+	}
+
+	if (!selectedContent) {
+		return {
+			owned_scope: [SPEC_PLACEHOLDER],
+			constraints: [SPEC_PLACEHOLDER],
+			acceptance_criteria: [SPEC_PLACEHOLDER],
+		}
+	}
+
+	return parseSpecIntentDetails(selectedContent)
+}
+
 function getExistingActiveIntents(existing: Record<string, any>): ActiveIntent[] {
 	if (!Array.isArray(existing.active_intents)) {
 		return []
@@ -275,13 +458,15 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 		(await ensureOrchestrationTodo(workspaceRoot, orchestrationDirPath))
 	const requirementId = tasksMarkdown ? findMatchingRequirementId(currentTaskText, tasksMarkdown) : undefined
 
-	if (input.toolName === "attempt_completion" && requirementId) {
-		await updateTodoOnCompletion(orchestrationTodoPath, requirementId)
-	}
-
 	const existing = await readYamlFile(activeIntentsPath)
 	const existingIntents = getExistingActiveIntents(existing)
 	const intentId = deriveIntentId(requirementId, existingIntents)
+	const resolvedRequirementId = requirementId ?? deriveRequirementIdFromIntentId(intentId)
+
+	if (input.toolName === "attempt_completion" && resolvedRequirementId) {
+		await updateTodoOnCompletion(orchestrationTodoPath, resolvedRequirementId)
+	}
+	const specDetails = await findSpecDetails(workspaceRoot, intentId, requirementId)
 	const existingIntent =
 		existingIntents.find((intent) => intent.id === intentId) ??
 		existingIntents.find((intent) => intent.status === "IN_PROGRESS")
@@ -290,12 +475,10 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 		id: intentId,
 		name: existingIntent?.name || currentTaskText || "Current Task",
 		status: "IN_PROGRESS",
-		owned_scope: Array.isArray(existingIntent?.owned_scope) ? existingIntent.owned_scope : [],
-		constraints: Array.isArray(existingIntent?.constraints) ? existingIntent.constraints : [],
-		acceptance_criteria: Array.isArray(existingIntent?.acceptance_criteria)
-			? existingIntent.acceptance_criteria
-			: [],
-		requirement_id: requirementId ?? null,
+		owned_scope: specDetails.owned_scope,
+		constraints: specDetails.constraints,
+		acceptance_criteria: specDetails.acceptance_criteria,
+		requirement_id: resolvedRequirementId ?? null,
 		task_id: cline.taskId,
 		task: currentTaskText,
 		tool_name: input.toolName,
