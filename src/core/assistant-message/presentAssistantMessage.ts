@@ -40,6 +40,7 @@ import { codebaseSearchTool } from "../tools/CodebaseSearchTool"
 
 import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
+import { runPreHook } from "../../hooks/runPreHook"
 
 /**
  * Processes and presents assistant message content to the user interface.
@@ -267,6 +268,16 @@ export async function presentAssistantMessage(cline: Task) {
 					tool_name: mcpBlock.toolName,
 					arguments: mcpBlock.arguments,
 				},
+			}
+
+			try {
+				await runPreHook(cline, {
+					toolName: mcpBlock.name,
+					toolCallId,
+					isPartial: mcpBlock.partial,
+				})
+			} catch (error) {
+				console.warn("[presentAssistantMessage] Governance pre-hook failed for mcp_tool_use", error)
 			}
 
 			await useMcpToolTool.handle(cline, syntheticToolUse, {
@@ -673,6 +684,16 @@ export async function presentAssistantMessage(cline: Task) {
 					)
 					break
 				}
+			}
+
+			try {
+				await runPreHook(cline, {
+					toolName: block.name,
+					toolCallId,
+					isPartial: block.partial,
+				})
+			} catch (error) {
+				console.warn("[presentAssistantMessage] Governance pre-hook failed for tool_use", error)
 			}
 
 			switch (block.name) {
