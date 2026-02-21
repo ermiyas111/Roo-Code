@@ -44,6 +44,11 @@ const UNKNOWN_REVISION = "unknown"
 const UNKNOWN_INTENT = "UNSPECIFIED"
 const UNKNOWN_REQUIREMENT = "UNSPECIFIED"
 
+type IntentTraceAction = {
+	timestamp: string
+	path: string
+}
+
 function formatAgentTraceJsonLine(record: AgentTraceRecord): string {
 	const formatted = JSON.stringify(record)
 	return `${formatted}\n`
@@ -144,4 +149,59 @@ export async function appendAgentTraceForWrite(params: RecordWriteTraceParams): 
 	const traceJsonLine = formatAgentTraceJsonLine(traceRecord)
 	await fs.mkdir(orchestrationDirPath, { recursive: true })
 	await fs.appendFile(traceLogPath, traceJsonLine, "utf-8")
+}
+
+export async function getRecentIntentTraceActions(
+	workspaceRoot: string,
+	intentId: string,
+	limit: number = 5,
+): Promise<IntentTraceAction[]> {
+	const traceLogPath = path.join(workspaceRoot, ".orchestration", "agent_trace.jsonl")
+
+	let raw: string
+	try {
+		raw = await fs.readFile(traceLogPath, "utf-8")
+	} catch {
+		return []
+	}
+
+	const actions: IntentTraceAction[] = []
+	const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0)
+
+	for (const line of lines) {
+		try {
+			const parsed = JSON.parse(line) as AgentTraceRecord
+			if (parsed.intent_id !== intentId) {
+				continue
+			}
+
+			const filePath = parsed.files?.[0]?.relative_path
+			if (!filePath) {
+				continue
+			}
+
+			actions.push({
+				timestamp: parsed.timestamp,
+				path: filePath,
+			})
+		} catch {
+			continue
+		}
+	}
+
+	return actions.slice(-Math.max(1, Math.min(5, limit))).reverse()
+}
+
+export async function getRecentIntentTraceSummary(
+	workspaceRoot: string,
+	intentId: string,
+	limit: number = 5,
+): Promise<string | undefined> {
+	const actions = await getRecentIntentTraceActions(workspaceRoot, intentId, limit)
+	if (actions.length === 0) {
+		return undefined
+	}
+
+	const lines = actions.map((action) => `- File ${action.path} was modified at ${action.timestamp}`)
+	return [`[INTENT TRACE BRIDGE] Recent actions for ${intentId}:`, ...lines].join("\n")
 }

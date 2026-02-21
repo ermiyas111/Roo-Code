@@ -8,10 +8,33 @@ import {
 	readSpecIntentDetails,
 	upsertActiveIntent,
 	getRequirementIdForIntent,
+	getActiveIntentById,
 } from "../../services/orchestration/activeIntentService"
 
 interface SelectActiveIntentParams {
 	intent_id: string
+}
+
+function escapeXml(value: string): string {
+	return value
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/\"/g, "&quot;")
+		.replace(/'/g, "&apos;")
+}
+
+function formatIntentContextXml(intent: {
+	id: string
+	owned_scope: string[]
+	constraints: string[]
+	acceptance_criteria: string[]
+}): string {
+	const scope = intent.owned_scope.map((item) => escapeXml(item)).join("\n")
+	const constraints = intent.constraints.map((item) => escapeXml(item)).join("\n")
+	const acceptanceCriteria = intent.acceptance_criteria.map((item) => escapeXml(item)).join("\n")
+
+	return `<intent_context>\n  <id>${escapeXml(intent.id)}</id>\n  <scope>${scope}</scope>\n  <constraints>${constraints}</constraints>\n  <acceptance_criteria>${acceptanceCriteria}</acceptance_criteria>\n</intent_context>`
 }
 
 export class SelectActiveIntentTool extends BaseTool<"select_active_intent"> {
@@ -59,7 +82,17 @@ export class SelectActiveIntentTool extends BaseTool<"select_active_intent"> {
 			updated_at: new Date().toISOString(),
 		})
 
-		pushToolResult(formatResponse.toolResult(`Intent ${intentId} is now active. Context loader initialized.`))
+		const hydratedIntent = await getActiveIntentById(workspaceRoot, intentId)
+		if (!hydratedIntent) {
+			pushToolResult(
+				formatResponse.toolError(
+					`Intent ${intentId} was selected but could not be loaded from .orchestration/active_intents.yaml.`,
+				),
+			)
+			return
+		}
+
+		pushToolResult(formatResponse.toolResult(formatIntentContextXml(hydratedIntent)))
 	}
 
 	override async handlePartial(task: Task, block: ToolUse<"select_active_intent">): Promise<void> {

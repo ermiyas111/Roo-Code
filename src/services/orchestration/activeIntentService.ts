@@ -492,6 +492,12 @@ export async function getCurrentActiveIntent(workspaceRoot: string): Promise<Act
 	return intents.find((intent) => intent.status === "IN_PROGRESS") ?? intents[0]
 }
 
+export async function getActiveIntentById(workspaceRoot: string, intentId: string): Promise<ActiveIntent | undefined> {
+	const activeIntentsPath = path.join(workspaceRoot, ".orchestration", "active_intents.yaml")
+	const { intents } = await readActiveIntentsYaml(activeIntentsPath)
+	return intents.find((intent) => intent.id === intentId)
+}
+
 export async function markRequirementCompletedInTodo(workspaceRoot: string, intentId: string): Promise<void> {
 	const { todoPath, content } = await ensureOrchestrationTodo(workspaceRoot)
 	if (!content) {

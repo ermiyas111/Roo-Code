@@ -1,4 +1,5 @@
 import type { Task } from "../core/task/Task"
+import { getRecentIntentTraceSummary } from "../services/TraceService"
 import {
 	getCurrentActiveIntent,
 	markRequirementCompletedInTodo,
@@ -28,6 +29,10 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 		return
 	}
 
+	if (input.toolName === "select_active_intent") {
+		return
+	}
+
 	const workspaceRoot = cline.cwd
 	const activeIntent = await getCurrentActiveIntent(workspaceRoot)
 
@@ -36,6 +41,14 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 	}
 
 	if (activeIntent) {
+		const traceSummary = await getRecentIntentTraceSummary(workspaceRoot, activeIntent.id)
+		if (traceSummary) {
+			cline.userMessageContent.unshift({
+				type: "text",
+				text: traceSummary,
+			})
+		}
+
 		const baseIntentUpdate = {
 			...activeIntent,
 			task_id: cline.taskId,
