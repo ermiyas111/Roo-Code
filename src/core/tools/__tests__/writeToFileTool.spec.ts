@@ -9,6 +9,7 @@ import { unescapeHtmlEntities } from "../../../utils/text-normalization"
 import { everyLineHasLineNumbers, stripLineNumbers } from "../../../integrations/misc/extract-text"
 import { ToolUse, ToolResponse } from "../../../shared/tools"
 import { writeToFileTool } from "../WriteToFileTool"
+import { runPostWriteFileHook } from "../../../hooks/runPostWriteFileHook"
 
 vi.mock("path", async () => {
 	const originalPath = await vi.importActual("path")
@@ -62,6 +63,10 @@ vi.mock("../../../integrations/misc/extract-text", () => ({
 	),
 }))
 
+vi.mock("../../../hooks/runPostWriteFileHook", () => ({
+	runPostWriteFileHook: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock("vscode", () => ({
 	window: {
 		showWarningMessage: vi.fn().mockResolvedValue(undefined),
@@ -101,6 +106,7 @@ describe("writeToFileTool", () => {
 	const mockedEveryLineHasLineNumbers = everyLineHasLineNumbers as MockedFunction<typeof everyLineHasLineNumbers>
 	const mockedStripLineNumbers = stripLineNumbers as MockedFunction<typeof stripLineNumbers>
 	const mockedPathResolve = path.resolve as MockedFunction<typeof path.resolve>
+	const mockedRunPostWriteFileHook = runPostWriteFileHook as MockedFunction<typeof runPostWriteFileHook>
 
 	const mockCline: any = {}
 	let mockAskApproval: ReturnType<typeof vi.fn>
@@ -119,6 +125,7 @@ describe("writeToFileTool", () => {
 		mockedUnescapeHtmlEntities.mockImplementation((content) => content)
 		mockedEveryLineHasLineNumbers.mockReturnValue(false)
 		mockedStripLineNumbers.mockImplementation((content) => content)
+		mockedRunPostWriteFileHook.mockResolvedValue(undefined)
 
 		mockCline.cwd = "/"
 		mockCline.consecutiveMistakeCount = 0
@@ -241,6 +248,7 @@ describe("writeToFileTool", () => {
 
 			expect(mockCline.rooIgnoreController.validateAccess).toHaveBeenCalledWith(testFilePath)
 			expect(mockCline.diffViewProvider.open).toHaveBeenCalledWith(testFilePath)
+			expect(mockedRunPostWriteFileHook).toHaveBeenCalledWith(mockCline, { relativePath: testFilePath })
 		})
 	})
 

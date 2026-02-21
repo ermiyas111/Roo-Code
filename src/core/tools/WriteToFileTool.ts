@@ -15,6 +15,7 @@ import { unescapeHtmlEntities } from "../../utils/text-normalization"
 import { EXPERIMENT_IDS, experiments } from "../../shared/experiments"
 import { convertNewFileToUnifiedDiff, computeDiffStats, sanitizeUnifiedDiff } from "../diff/stats"
 import type { ToolUse } from "../../shared/tools"
+import { runPostWriteFileHook } from "../../hooks/runPostWriteFileHook"
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 
@@ -171,6 +172,9 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 
 			if (relPath) {
 				await task.fileContextTracker.trackFileContext(relPath, "roo_edited" as RecordSource)
+				await runPostWriteFileHook(task, {
+					relativePath: relPath,
+				})
 			}
 
 			task.didEditFile = true
