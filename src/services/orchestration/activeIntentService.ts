@@ -316,14 +316,26 @@ function extractOwnedScopeFromTaskString(taskString: string | undefined): string
 		return [SPEC_PLACEHOLDER]
 	}
 
-	const inDirectoryMatch = taskString.match(/\bin\s+([^\s,;]+[\\/])/i)
-	if (inDirectoryMatch?.[1]) {
-		return normalizeList([inDirectoryMatch[1].replace(/\\/g, "/")])
+	const pathTokenPattern = /([A-Za-z0-9._-]+(?:[\\/][A-Za-z0-9._-]+)+(?:[\\/])?)/g
+	const extractedPaths: string[] = []
+
+	for (const match of taskString.matchAll(pathTokenPattern)) {
+		const rawPath = match[1]
+		if (!rawPath) {
+			continue
+		}
+
+		const normalizedPath = rawPath.replace(/\\/g, "/").replace(/[),.;:]+$/g, "")
+		if (normalizedPath.length === 0) {
+			continue
+		}
+
+		extractedPaths.push(normalizedPath)
 	}
 
-	const pathTokenMatch = taskString.match(/([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\/)/)
-	if (pathTokenMatch?.[1]) {
-		return normalizeList([pathTokenMatch[1]])
+	if (extractedPaths.length > 0) {
+		const uniquePaths = Array.from(new Set(extractedPaths))
+		return normalizeList(uniquePaths)
 	}
 
 	return normalizeList([taskString])
