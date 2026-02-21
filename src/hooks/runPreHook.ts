@@ -1,14 +1,17 @@
 import type { Task } from "../core/task/Task"
 import { getRecentIntentTraceSummary } from "../services/TraceService"
+import { enforceGovernanceForTool } from "../services/GovernanceService"
 import {
 	getCurrentActiveIntent,
 	markRequirementCompletedInTodo,
 	removeActiveIntent,
 	upsertActiveIntent,
 } from "../services/orchestration/activeIntentService"
+import type { ToolParamName } from "../shared/tools"
 
 type RunPreHookInput = {
 	toolName: string
+	toolParams?: Partial<Record<ToolParamName, string>>
 	toolCallId?: string
 	isPartial?: boolean
 }
@@ -22,6 +25,7 @@ const IMPLEMENTATION_TOOLS = new Set([
 	"search_replace",
 	"edit_file",
 	"apply_patch",
+	"insert_content",
 ])
 
 export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<void> {
@@ -39,6 +43,13 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 	if (!activeIntent && IMPLEMENTATION_TOOLS.has(input.toolName)) {
 		throw new Error("You must cite a valid active Intent ID.")
 	}
+
+	await enforceGovernanceForTool({
+		task: cline,
+		toolName: input.toolName,
+		toolParams: input.toolParams,
+		activeIntent,
+	})
 
 	if (activeIntent) {
 		const traceSummary = await getRecentIntentTraceSummary(workspaceRoot, activeIntent.id)

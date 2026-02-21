@@ -274,13 +274,14 @@ export async function presentAssistantMessage(cline: Task) {
 			try {
 				await runPreHook(cline, {
 					toolName: mcpBlock.name,
+					toolParams: undefined,
 					toolCallId,
 					isPartial: mcpBlock.partial,
 				})
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				console.warn("[presentAssistantMessage] Governance pre-hook blocked mcp_tool_use", error)
-				pushToolResult(formatResponse.toolError(message))
+				pushToolResult(message.trim().startsWith("{") ? message : formatResponse.toolError(message))
 				break
 			}
 
@@ -695,13 +696,14 @@ export async function presentAssistantMessage(cline: Task) {
 			try {
 				await runPreHook(cline, {
 					toolName: block.name,
+					toolParams: block.params,
 					toolCallId,
 					isPartial: block.partial,
 				})
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				console.warn("[presentAssistantMessage] Governance pre-hook blocked tool_use", error)
-				pushToolResult(formatResponse.toolError(message))
+				pushToolResult(message.trim().startsWith("{") ? message : formatResponse.toolError(message))
 				break
 			}
 
