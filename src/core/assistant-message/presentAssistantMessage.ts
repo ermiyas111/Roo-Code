@@ -34,12 +34,53 @@ import { updateTodoListTool } from "../tools/UpdateTodoListTool"
 import { runSlashCommandTool } from "../tools/RunSlashCommandTool"
 import { skillTool } from "../tools/SkillTool"
 import { generateImageTool } from "../tools/GenerateImageTool"
+import { selectActiveIntentTool } from "../tools/SelectActiveIntentTool"
 import { applyDiffTool as applyDiffToolClass } from "../tools/ApplyDiffTool"
 import { isValidToolName, validateToolUse } from "../tools/validateToolUse"
 import { codebaseSearchTool } from "../tools/CodebaseSearchTool"
 
 import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
+import { runPreHook } from "../hooks/runPreHook"
+
+function buildPreHookToolParams(
+	toolUse: Pick<ToolUse, "params" | "nativeArgs">,
+): Partial<Record<ToolParamName, string>> {
+	const merged: Partial<Record<ToolParamName, string>> = { ...(toolUse.params ?? {}) }
+
+	if (!toolUse.nativeArgs || typeof toolUse.nativeArgs !== "object") {
+		return merged
+	}
+
+	for (const [rawKey, value] of Object.entries(toolUse.nativeArgs as Record<string, unknown>)) {
+		if (value === undefined || value === null) {
+			continue
+		}
+
+		const key = rawKey as ToolParamName
+		if (merged[key] !== undefined) {
+			continue
+		}
+
+		if (typeof value === "string") {
+			merged[key] = value
+			continue
+		}
+
+		if (typeof value === "number" || typeof value === "boolean") {
+			merged[key] = String(value)
+			continue
+		}
+
+		try {
+			merged[key] = JSON.stringify(value)
+		} catch {
+			continue
+		}
+	}
+
+	return merged
+}
 
 /**
  * Processes and presents assistant message content to the user interface.
@@ -269,6 +310,20 @@ export async function presentAssistantMessage(cline: Task) {
 				},
 			}
 
+			try {
+				await runPreHook(cline, {
+					toolName: mcpBlock.name,
+					toolParams: buildPreHookToolParams(syntheticToolUse),
+					toolCallId,
+					isPartial: mcpBlock.partial,
+				})
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				console.warn("[presentAssistantMessage] Governance pre-hook blocked mcp_tool_use", error)
+				pushToolResult(formatResponse.toolError(message))
+				break
+			}
+
 			await useMcpToolTool.handle(cline, syntheticToolUse, {
 				askApproval,
 				handleError,
@@ -377,6 +432,8 @@ export async function presentAssistantMessage(cline: Task) {
 						const modeName = getModeBySlug(mode, customModes)?.name ?? mode
 						return `[${block.name} in ${modeName} mode: '${message}']`
 					}
+					case "select_active_intent":
+						return `[${block.name} for '${block.params.intent_id}']`
 					case "run_slash_command":
 						return `[${block.name} for '${block.params.command}'${block.params.args ? ` with args: ${block.params.args}` : ""}]`
 					case "skill":
@@ -675,6 +732,21 @@ export async function presentAssistantMessage(cline: Task) {
 				}
 			}
 
+			try {
+				const preHookToolParams = buildPreHookToolParams(block as ToolUse)
+				await runPreHook(cline, {
+					toolName: block.name,
+					toolParams: preHookToolParams,
+					toolCallId,
+					isPartial: block.partial,
+				})
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				console.warn("[presentAssistantMessage] Governance pre-hook blocked tool_use", error)
+				pushToolResult(formatResponse.toolError(message))
+				break
+			}
+
 			switch (block.name) {
 				case "write_to_file":
 					await checkpointSaveAndMark(cline)
@@ -810,6 +882,13 @@ export async function presentAssistantMessage(cline: Task) {
 						handleError,
 						pushToolResult,
 						toolCallId: block.id,
+					})
+					break
+				case "select_active_intent":
+					await selectActiveIntentTool.handle(cline, block as ToolUse<"select_active_intent">, {
+						askApproval,
+						handleError,
+						pushToolResult,
 					})
 					break
 				case "attempt_completion": {

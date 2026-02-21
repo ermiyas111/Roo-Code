@@ -49,6 +49,8 @@ export const toolParamNames = [
 	"cwd",
 	"follow_up",
 	"task",
+	"intent_id",
+	"mutation_class",
 	"size",
 	"query",
 	"args",
@@ -102,6 +104,7 @@ export type NativeToolArgs = {
 	apply_patch: { patch: string }
 	list_files: { path: string; recursive?: boolean }
 	new_task: { mode: string; message: string; todos?: string }
+	select_active_intent: { intent_id: string }
 	ask_followup_question: {
 		question: string
 		follow_up: Array<{ text: string; mode?: string }>
@@ -114,7 +117,12 @@ export type NativeToolArgs = {
 	switch_mode: { mode_slug: string; reason: string }
 	update_todo_list: { todos: string }
 	use_mcp_tool: { server_name: string; tool_name: string; arguments?: Record<string, unknown> }
-	write_to_file: { path: string; content: string }
+	write_to_file: {
+		path: string
+		content: string
+		intent_id: string
+		mutation_class: "AST_REFACTOR" | "INTENT_EVOLUTION"
+	}
 	// Add more tools as they are migrated to native protocol
 }
 
@@ -194,7 +202,7 @@ export interface ReadFileToolUse extends ToolUse<"read_file"> {
 
 export interface WriteToFileToolUse extends ToolUse<"write_to_file"> {
 	name: "write_to_file"
-	params: Partial<Pick<Record<ToolParamName, string>, "path" | "content">>
+	params: Partial<Pick<Record<ToolParamName, string>, "path" | "content" | "intent_id" | "mutation_class">>
 }
 
 export interface CodebaseSearchToolUse extends ToolUse<"codebase_search"> {
@@ -283,6 +291,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	attempt_completion: "complete tasks",
 	switch_mode: "switch modes",
 	new_task: "create new task",
+	select_active_intent: "select active intent",
 	codebase_search: "codebase search",
 	update_todo_list: "update todo list",
 	run_slash_command: "run slash command",
@@ -318,6 +327,7 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"attempt_completion",
 	"switch_mode",
 	"new_task",
+	"select_active_intent",
 	"update_todo_list",
 	"run_slash_command",
 	"skill",

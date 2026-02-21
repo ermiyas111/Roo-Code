@@ -9,6 +9,8 @@ import { unescapeHtmlEntities } from "../../../utils/text-normalization"
 import { everyLineHasLineNumbers, stripLineNumbers } from "../../../integrations/misc/extract-text"
 import { ToolUse, ToolResponse } from "../../../shared/tools"
 import { writeToFileTool } from "../WriteToFileTool"
+import { runPostWriteFileHook } from "../../../hooks/runPostWriteFileHook"
+import { getCurrentActiveIntent } from "../../../services/orchestration/activeIntentService"
 
 vi.mock("path", async () => {
 	const originalPath = await vi.importActual("path")
@@ -62,6 +64,14 @@ vi.mock("../../../integrations/misc/extract-text", () => ({
 	),
 }))
 
+vi.mock("../../../hooks/runPostWriteFileHook", () => ({
+	runPostWriteFileHook: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("../../../services/orchestration/activeIntentService", () => ({
+	getCurrentActiveIntent: vi.fn(),
+}))
+
 vi.mock("vscode", () => ({
 	window: {
 		showWarningMessage: vi.fn().mockResolvedValue(undefined),
@@ -91,6 +101,8 @@ describe("writeToFileTool", () => {
 	const absoluteFilePath = process.platform === "win32" ? "C:\\test\\file.txt" : "/test/file.txt"
 	const testContent = "Line 1\nLine 2\nLine 3"
 	const testContentWithMarkdown = "```javascript\nLine 1\nLine 2\n```"
+	const testIntentId = "INT-001"
+	const testMutationClass = "AST_REFACTOR"
 
 	// Mocked functions with correct types
 	const mockedFileExistsAtPath = fileExistsAtPath as MockedFunction<typeof fileExistsAtPath>
@@ -101,6 +113,8 @@ describe("writeToFileTool", () => {
 	const mockedEveryLineHasLineNumbers = everyLineHasLineNumbers as MockedFunction<typeof everyLineHasLineNumbers>
 	const mockedStripLineNumbers = stripLineNumbers as MockedFunction<typeof stripLineNumbers>
 	const mockedPathResolve = path.resolve as MockedFunction<typeof path.resolve>
+	const mockedRunPostWriteFileHook = runPostWriteFileHook as MockedFunction<typeof runPostWriteFileHook>
+	const mockedGetCurrentActiveIntent = getCurrentActiveIntent as MockedFunction<typeof getCurrentActiveIntent>
 
 	const mockCline: any = {}
 	let mockAskApproval: ReturnType<typeof vi.fn>
@@ -119,6 +133,16 @@ describe("writeToFileTool", () => {
 		mockedUnescapeHtmlEntities.mockImplementation((content) => content)
 		mockedEveryLineHasLineNumbers.mockReturnValue(false)
 		mockedStripLineNumbers.mockImplementation((content) => content)
+		mockedRunPostWriteFileHook.mockResolvedValue(undefined)
+		mockedGetCurrentActiveIntent.mockResolvedValue({
+			id: testIntentId,
+			name: "Intent 1",
+			status: "IN_PROGRESS",
+			owned_scope: ["src/"],
+			constraints: ["constraint"],
+			acceptance_criteria: ["done"],
+			requirement_id: "T001",
+		})
 
 		mockCline.cwd = "/"
 		mockCline.consecutiveMistakeCount = 0
@@ -180,6 +204,7 @@ describe("writeToFileTool", () => {
 		mockCline.ask = vi.fn().mockResolvedValue(undefined)
 		mockCline.recordToolError = vi.fn()
 		mockCline.sayAndCreateMissingParamError = vi.fn().mockResolvedValue("Missing param error")
+		mockCline.taskId = "task-123"
 
 		mockAskApproval = vi.fn().mockResolvedValue(true)
 		mockHandleError = vi.fn().mockResolvedValue(undefined)
@@ -213,11 +238,15 @@ describe("writeToFileTool", () => {
 			params: {
 				path: testFilePath,
 				content: testContent,
+				intent_id: testIntentId,
+				mutation_class: testMutationClass,
 				...params,
 			},
 			nativeArgs: {
 				path: (params.path ?? testFilePath) as any,
 				content: (params.content ?? testContent) as any,
+				intent_id: (params.intent_id ?? testIntentId) as any,
+				mutation_class: (params.mutation_class ?? testMutationClass) as any,
 			},
 			partial: isPartial,
 		}
@@ -241,6 +270,28 @@ describe("writeToFileTool", () => {
 
 			expect(mockCline.rooIgnoreController.validateAccess).toHaveBeenCalledWith(testFilePath)
 			expect(mockCline.diffViewProvider.open).toHaveBeenCalledWith(testFilePath)
+			expect(mockedRunPostWriteFileHook).toHaveBeenCalledWith(mockCline, {
+				relativePath: testFilePath,
+				intentId: testIntentId,
+				mutationClass: testMutationClass,
+				newContent: testContent,
+				previousContent: undefined,
+			})
+		})
+	})
+
+	describe("intent map verification", () => {
+		it("announces intent map update message from post-write hook", async () => {
+			mockedRunPostWriteFileHook.mockResolvedValue({
+				intentMapMessage: "Intent Map updated: Added [FeatureService] to INT-001 mapping.",
+			} as any)
+
+			await executeWriteFileTool({}, { accessAllowed: true })
+
+			expect(mockCline.say).toHaveBeenCalledWith(
+				"text",
+				"Intent Map updated: Added [FeatureService] to INT-001 mapping.",
+			)
 		})
 	})
 
@@ -443,6 +494,15 @@ describe("writeToFileTool", () => {
 	})
 
 	describe("error handling", () => {
+		it("returns a validation error for unsupported mutation_class values", async () => {
+			const result = await executeWriteFileTool({ mutation_class: "UNSPECIFIED" as any })
+
+			expect(result).toBe(
+				"Error: Invalid mutation_class. You must classify this change as AST_REFACTOR or INTENT_EVOLUTION.",
+			)
+			expect(mockCline.diffViewProvider.open).not.toHaveBeenCalled()
+		})
+
 		it("handles general file operation errors", async () => {
 			mockCline.diffViewProvider.open.mockRejectedValue(new Error("General error"))
 
