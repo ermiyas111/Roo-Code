@@ -49,6 +49,7 @@ export const toolParamNames = [
 	"cwd",
 	"follow_up",
 	"task",
+	"intent_id",
 	"size",
 	"query",
 	"args",
@@ -102,6 +103,7 @@ export type NativeToolArgs = {
 	apply_patch: { patch: string }
 	list_files: { path: string; recursive?: boolean }
 	new_task: { mode: string; message: string; todos?: string }
+	select_active_intent: { intent_id: string }
 	ask_followup_question: {
 		question: string
 		follow_up: Array<{ text: string; mode?: string }>
@@ -283,6 +285,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	attempt_completion: "complete tasks",
 	switch_mode: "switch modes",
 	new_task: "create new task",
+	select_active_intent: "select active intent",
 	codebase_search: "codebase search",
 	update_todo_list: "update todo list",
 	run_slash_command: "run slash command",
@@ -318,6 +321,7 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"attempt_completion",
 	"switch_mode",
 	"new_task",
+	"select_active_intent",
 	"update_todo_list",
 	"run_slash_command",
 	"skill",

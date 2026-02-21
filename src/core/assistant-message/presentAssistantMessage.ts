@@ -34,13 +34,14 @@ import { updateTodoListTool } from "../tools/UpdateTodoListTool"
 import { runSlashCommandTool } from "../tools/RunSlashCommandTool"
 import { skillTool } from "../tools/SkillTool"
 import { generateImageTool } from "../tools/GenerateImageTool"
+import { selectActiveIntentTool } from "../tools/SelectActiveIntentTool"
 import { applyDiffTool as applyDiffToolClass } from "../tools/ApplyDiffTool"
 import { isValidToolName, validateToolUse } from "../tools/validateToolUse"
 import { codebaseSearchTool } from "../tools/CodebaseSearchTool"
 
 import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
-import { runPreHook } from "../../hooks/runPreHook"
+import { runPreHook } from "../hooks/runPreHook"
 
 /**
  * Processes and presents assistant message content to the user interface.
@@ -277,7 +278,10 @@ export async function presentAssistantMessage(cline: Task) {
 					isPartial: mcpBlock.partial,
 				})
 			} catch (error) {
-				console.warn("[presentAssistantMessage] Governance pre-hook failed for mcp_tool_use", error)
+				const message = error instanceof Error ? error.message : String(error)
+				console.warn("[presentAssistantMessage] Governance pre-hook blocked mcp_tool_use", error)
+				pushToolResult(formatResponse.toolError(message))
+				break
 			}
 
 			await useMcpToolTool.handle(cline, syntheticToolUse, {
@@ -388,6 +392,8 @@ export async function presentAssistantMessage(cline: Task) {
 						const modeName = getModeBySlug(mode, customModes)?.name ?? mode
 						return `[${block.name} in ${modeName} mode: '${message}']`
 					}
+					case "select_active_intent":
+						return `[${block.name} for '${block.params.intent_id}']`
 					case "run_slash_command":
 						return `[${block.name} for '${block.params.command}'${block.params.args ? ` with args: ${block.params.args}` : ""}]`
 					case "skill":
@@ -693,7 +699,10 @@ export async function presentAssistantMessage(cline: Task) {
 					isPartial: block.partial,
 				})
 			} catch (error) {
-				console.warn("[presentAssistantMessage] Governance pre-hook failed for tool_use", error)
+				const message = error instanceof Error ? error.message : String(error)
+				console.warn("[presentAssistantMessage] Governance pre-hook blocked tool_use", error)
+				pushToolResult(formatResponse.toolError(message))
+				break
 			}
 
 			switch (block.name) {
@@ -831,6 +840,13 @@ export async function presentAssistantMessage(cline: Task) {
 						handleError,
 						pushToolResult,
 						toolCallId: block.id,
+					})
+					break
+				case "select_active_intent":
+					await selectActiveIntentTool.handle(cline, block as ToolUse<"select_active_intent">, {
+						askApproval,
+						handleError,
+						pushToolResult,
 					})
 					break
 				case "attempt_completion": {
