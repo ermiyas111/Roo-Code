@@ -31,9 +31,7 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 	const activeIntent = await getCurrentActiveIntent(workspaceRoot)
 
 	if (!activeIntent && IMPLEMENTATION_TOOLS.has(input.toolName)) {
-		throw new Error(
-			"No active intent is selected. Call select_active_intent before using implementation tools like write_to_file.",
-		)
+		throw new Error("You must cite a valid active Intent ID.")
 	}
 
 	if (activeIntent) {
