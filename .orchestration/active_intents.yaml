@@ -1,0 +1,112 @@
+active_intents:
+  - id: T006
+    name: Create shared task envelope schema models in src/schemas/task_envelope.py
+    status: COMPLETED
+    owned_scope:
+      - src/schemas/task_envelope.py
+    constraints:
+      - Python + Docker + Makefile workflows.
+      - PostgreSQL + pgvector for semantic metadata.
+      - All external access must go through MCP adapters (Sense for finance).
+    acceptance_criteria:
+      - Trend discovery returns a ranked list of trends with velocity scores.
+      - Each trend includes a keyword/tag and a numeric velocity score.
+      - The result is associated with the requested niche and platform.
+    requirement_id: T006
+    task_id: 019c8114-6d10-773a-83d3-54973d28d7e0
+    task: >-
+      implement T001 Create feature directory contracts scaffold in
+      specs/1-influencer-factory/contracts/
+    tool_name: attempt_completion
+    updated_at: '2026-02-21T17:11:05.257Z'
+    tool_call_id: attempt_completion-0
+  - id: T005
+    name: Add feature quickstart command references in README.md
+    status: COMPLETED
+    owned_scope:
+      - Add feature quickstart command references in README.md
+    constraints:
+      - Python + Docker + Makefile workflows.
+      - PostgreSQL + pgvector for semantic metadata.
+      - All external access must go through MCP adapters (Sense for finance).
+    acceptance_criteria:
+      - Trend discovery returns a ranked list of trends with velocity scores.
+      - Each trend includes a keyword/tag and a numeric velocity score.
+      - The result is associated with the requested niche and platform.
+    requirement_id: T005
+    task_id: 019c8114-6d10-773a-83d3-54973d28d7e0
+    task: >-
+      implement T001 Create feature directory contracts scaffold in
+      specs/1-influencer-factory/contracts/
+    tool_name: attempt_completion
+    updated_at: '2026-02-21T17:10:05.566Z'
+    tool_call_id: attempt_completion-0
+  - id: T004
+    name: P] Add pytest markers for contract/integration/unit in tests/conftest.py
+    status: COMPLETED
+    owned_scope:
+      - contract/integration/unit
+      - tests/conftest.py
+    constraints:
+      - Python + Docker + Makefile workflows.
+      - PostgreSQL + pgvector for semantic metadata.
+      - All external access must go through MCP adapters (Sense for finance).
+    acceptance_criteria:
+      - Trend discovery returns a ranked list of trends with velocity scores.
+      - Each trend includes a keyword/tag and a numeric velocity score.
+      - The result is associated with the requested niche and platform.
+    requirement_id: T004
+    task_id: 019c8114-6d10-773a-83d3-54973d28d7e0
+    task: >-
+      implement T001 Create feature directory contracts scaffold in
+      specs/1-influencer-factory/contracts/
+    tool_name: attempt_completion
+    updated_at: '2026-02-21T17:07:15.173Z'
+    tool_call_id: attempt_completion-0
+  - id: T002
+    name: >-
+      P] Add factory environment variables template in src/lib/config.py & Add
+      structured logging bootstrap with trace fields in src/lib/logging.py
+    status: COMPLETED
+    owned_scope:
+      - src/lib/config.py
+      - src/lib/logging.py
+    constraints:
+      - Python + Docker + Makefile workflows.
+      - PostgreSQL + pgvector for semantic metadata.
+      - All external access must go through MCP adapters (Sense for finance).
+    acceptance_criteria:
+      - Trend discovery returns a ranked list of trends with velocity scores.
+      - Each trend includes a keyword/tag and a numeric velocity score.
+      - The result is associated with the requested niche and platform.
+    requirement_id: T002
+    task_id: 019c8114-6d10-773a-83d3-54973d28d7e0
+    task: >-
+      implement T001 Create feature directory contracts scaffold in
+      specs/1-influencer-factory/contracts/
+    tool_name: attempt_completion
+    updated_at: '2026-02-21T16:50:44.346Z'
+    tool_call_id: attempt_completion-0
+  - id: T001
+    name: >-
+      Create feature directory contracts scaffold in
+      specs/1-influencer-factory/contracts/
+    status: COMPLETED
+    owned_scope:
+      - specs/1-influencer-factory/contracts/
+    constraints:
+      - Python + Docker + Makefile workflows.
+      - PostgreSQL + pgvector for semantic metadata.
+      - All external access must go through MCP adapters (Sense for finance).
+    acceptance_criteria:
+      - Trend discovery returns a ranked list of trends with velocity scores.
+      - Each trend includes a keyword/tag and a numeric velocity score.
+      - The result is associated with the requested niche and platform.
+    requirement_id: T001
+    task_id: 019c8114-6d10-773a-83d3-54973d28d7e0
+    task: >-
+      implement T001 Create feature directory contracts scaffold in
+      specs/1-influencer-factory/contracts/
+    tool_name: attempt_completion
+    updated_at: '2026-02-21T16:45:58.016Z'
+    tool_call_id: attempt_completion-0
