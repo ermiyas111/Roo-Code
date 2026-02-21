@@ -4,7 +4,6 @@ import { enforceGovernanceForTool } from "../services/GovernanceService"
 import {
 	getCurrentActiveIntent,
 	markRequirementCompletedInTodo,
-	removeActiveIntent,
 	upsertActiveIntent,
 } from "../services/orchestration/activeIntentService"
 import type { ToolParamName } from "../shared/tools"
@@ -80,7 +79,6 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 				status: "COMPLETED",
 				updated_at: new Date().toISOString(),
 			})
-			await removeActiveIntent(workspaceRoot, activeIntent.id)
 		}
 	}
 }
