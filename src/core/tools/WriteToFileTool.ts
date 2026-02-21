@@ -16,12 +16,19 @@ import { EXPERIMENT_IDS, experiments } from "../../shared/experiments"
 import { convertNewFileToUnifiedDiff, computeDiffStats, sanitizeUnifiedDiff } from "../diff/stats"
 import type { ToolUse } from "../../shared/tools"
 import { runPostWriteFileHook } from "../../hooks/runPostWriteFileHook"
+import { getCurrentActiveIntent } from "../../services/orchestration/activeIntentService"
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 
 interface WriteToFileParams {
 	path: string
 	content: string
+	intent_id: string
+	mutation_class: "AST_REFACTOR" | "INTENT_EVOLUTION"
+}
+
+function isValidMutationClass(value: string): value is WriteToFileParams["mutation_class"] {
+	return value === "AST_REFACTOR" || value === "INTENT_EVOLUTION"
 }
 
 export class WriteToFileTool extends BaseTool<"write_to_file"> {
@@ -31,6 +38,8 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 		const { pushToolResult, handleError, askApproval } = callbacks
 		const relPath = params.path
 		let newContent = params.content
+		const intentId = params.intent_id
+		const mutationClass = params.mutation_class
 
 		if (!relPath) {
 			task.consecutiveMistakeCount++
@@ -44,6 +53,53 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 			task.consecutiveMistakeCount++
 			task.recordToolError("write_to_file")
 			pushToolResult(await task.sayAndCreateMissingParamError("write_to_file", "content"))
+			await task.diffViewProvider.reset()
+			return
+		}
+
+		if (!intentId) {
+			task.consecutiveMistakeCount++
+			task.recordToolError("write_to_file")
+			pushToolResult(await task.sayAndCreateMissingParamError("write_to_file", "intent_id"))
+			await task.diffViewProvider.reset()
+			return
+		}
+
+		if (!mutationClass) {
+			task.consecutiveMistakeCount++
+			task.recordToolError("write_to_file")
+			pushToolResult(await task.sayAndCreateMissingParamError("write_to_file", "mutation_class"))
+			await task.diffViewProvider.reset()
+			return
+		}
+
+		if (!isValidMutationClass(mutationClass)) {
+			task.consecutiveMistakeCount++
+			task.recordToolError("write_to_file")
+			pushToolResult(
+				formatResponse.toolError(
+					"Invalid mutation_class. You must classify this change as AST_REFACTOR or INTENT_EVOLUTION.",
+				),
+			)
+			await task.diffViewProvider.reset()
+			return
+		}
+
+		const activeIntent = await getCurrentActiveIntent(task.cwd)
+		const activeIntentLabel = activeIntent?.requirement_id ?? activeIntent?.id ?? "UNSPECIFIED"
+		const providedIntent = intentId.trim().toUpperCase()
+		const activeIntentId = activeIntent?.id?.toUpperCase()
+		const activeRequirementId = activeIntent?.requirement_id?.toUpperCase()
+		const matchesActiveIntent = providedIntent === activeIntentId || providedIntent === activeRequirementId
+
+		if (!matchesActiveIntent) {
+			task.consecutiveMistakeCount++
+			task.recordToolError("write_to_file")
+			pushToolResult(
+				formatResponse.toolError(
+					`Intent Mismatch: You provided ${intentId} but the system is clocked into ${activeIntentLabel}. Please sync your state or call select_active_intent.`,
+				),
+			)
 			await task.diffViewProvider.reset()
 			return
 		}
@@ -174,6 +230,8 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 				await task.fileContextTracker.trackFileContext(relPath, "roo_edited" as RecordSource)
 				await runPostWriteFileHook(task, {
 					relativePath: relPath,
+					intentId,
+					mutationClass,
 				})
 			}
 

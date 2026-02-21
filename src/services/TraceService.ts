@@ -9,12 +9,16 @@ type RecordWriteTraceParams = {
 	relativePath: string
 	taskId: string
 	modelIdentifier: string
+	intentId: string
+	mutationClass: "AST_REFACTOR" | "INTENT_EVOLUTION"
 }
 
 type AgentTraceRecord = {
 	id: string
 	trace_id: string
 	intent_id: string
+	active_intent_id?: string
+	mutation_class?: "AST_REFACTOR" | "INTENT_EVOLUTION"
 	timestamp: string
 	vcs: {
 		revision_id: string
@@ -105,14 +109,17 @@ export async function appendAgentTraceForWrite(params: RecordWriteTraceParams): 
 	const { startLine, endLine } = toLineRange(content)
 
 	const activeIntent = await getCurrentActiveIntent(params.workspaceRoot)
-	const intentId = activeIntent?.id ?? UNKNOWN_INTENT
-	const requirementId = activeIntent?.requirement_id ?? getRequirementIdForIntent(intentId) ?? UNKNOWN_REQUIREMENT
+	const activeIntentId = activeIntent?.id ?? UNKNOWN_INTENT
+	const requirementId =
+		activeIntent?.requirement_id ?? getRequirementIdForIntent(activeIntentId) ?? UNKNOWN_REQUIREMENT
 	const revisionId = await resolveRevisionId(params.workspaceRoot)
 
 	const traceRecord: AgentTraceRecord = {
 		id: crypto.randomUUID(),
 		trace_id: buildTraceId(),
-		intent_id: intentId,
+		intent_id: params.intentId,
+		active_intent_id: activeIntentId,
+		mutation_class: params.mutationClass,
 		timestamp: new Date().toISOString(),
 		vcs: { revision_id: revisionId },
 		files: [
@@ -171,7 +178,8 @@ export async function getRecentIntentTraceActions(
 	for (const line of lines) {
 		try {
 			const parsed = JSON.parse(line) as AgentTraceRecord
-			if (parsed.intent_id !== intentId) {
+			const matchesIntent = parsed.intent_id === intentId || parsed.active_intent_id === intentId
+			if (!matchesIntent) {
 				continue
 			}
 

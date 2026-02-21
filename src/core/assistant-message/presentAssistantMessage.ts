@@ -43,6 +43,45 @@ import { formatResponse } from "../prompts/responses"
 import { sanitizeToolUseId } from "../../utils/tool-id"
 import { runPreHook } from "../hooks/runPreHook"
 
+function buildPreHookToolParams(
+	toolUse: Pick<ToolUse, "params" | "nativeArgs">,
+): Partial<Record<ToolParamName, string>> {
+	const merged: Partial<Record<ToolParamName, string>> = { ...(toolUse.params ?? {}) }
+
+	if (!toolUse.nativeArgs || typeof toolUse.nativeArgs !== "object") {
+		return merged
+	}
+
+	for (const [rawKey, value] of Object.entries(toolUse.nativeArgs as Record<string, unknown>)) {
+		if (value === undefined || value === null) {
+			continue
+		}
+
+		const key = rawKey as ToolParamName
+		if (merged[key] !== undefined) {
+			continue
+		}
+
+		if (typeof value === "string") {
+			merged[key] = value
+			continue
+		}
+
+		if (typeof value === "number" || typeof value === "boolean") {
+			merged[key] = String(value)
+			continue
+		}
+
+		try {
+			merged[key] = JSON.stringify(value)
+		} catch {
+			continue
+		}
+	}
+
+	return merged
+}
+
 /**
  * Processes and presents assistant message content to the user interface.
  *
@@ -274,14 +313,14 @@ export async function presentAssistantMessage(cline: Task) {
 			try {
 				await runPreHook(cline, {
 					toolName: mcpBlock.name,
-					toolParams: undefined,
+					toolParams: buildPreHookToolParams(syntheticToolUse),
 					toolCallId,
 					isPartial: mcpBlock.partial,
 				})
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				console.warn("[presentAssistantMessage] Governance pre-hook blocked mcp_tool_use", error)
-				pushToolResult(message.trim().startsWith("{") ? message : formatResponse.toolError(message))
+				pushToolResult(formatResponse.toolError(message))
 				break
 			}
 
@@ -694,16 +733,17 @@ export async function presentAssistantMessage(cline: Task) {
 			}
 
 			try {
+				const preHookToolParams = buildPreHookToolParams(block as ToolUse)
 				await runPreHook(cline, {
 					toolName: block.name,
-					toolParams: block.params,
+					toolParams: preHookToolParams,
 					toolCallId,
 					isPartial: block.partial,
 				})
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				console.warn("[presentAssistantMessage] Governance pre-hook blocked tool_use", error)
-				pushToolResult(message.trim().startsWith("{") ? message : formatResponse.toolError(message))
+				pushToolResult(formatResponse.toolError(message))
 				break
 			}
 

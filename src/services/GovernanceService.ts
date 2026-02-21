@@ -17,6 +17,14 @@ type GovernanceInput = {
 
 const APPROVE_LABEL = "Approve"
 const REJECT_LABEL = "Reject"
+const AST_REFACTOR = "AST_REFACTOR"
+const INTENT_EVOLUTION = "INTENT_EVOLUTION"
+
+type SemanticMutationClass = typeof AST_REFACTOR | typeof INTENT_EVOLUTION
+
+function isValidMutationClass(value: string): value is SemanticMutationClass {
+	return value === AST_REFACTOR || value === INTENT_EVOLUTION
+}
 
 function normalizePosixPath(filePath: string): string {
 	return filePath.replace(/\\/g, "/").replace(/^\.\//, "")
@@ -77,6 +85,103 @@ function resolveTargetFromTool(
 	return { displayTarget: pathCandidate, filePath: pathCandidate }
 }
 
+function getTargetLabel(targetPath: string): string {
+	const normalized = normalizePosixPath(targetPath)
+	const parts = normalized.split("/")
+	return parts[parts.length - 1] || normalized
+}
+
+function extractExportLines(content: string): string[] {
+	return content
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => /^export\b/.test(line))
+}
+
+function extractClassNames(content: string): Set<string> {
+	const classNamePattern = /(?:^|\s)(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)/gm
+	const names = new Set<string>()
+	for (const match of content.matchAll(classNamePattern)) {
+		if (match[1]) {
+			names.add(match[1])
+		}
+	}
+	return names
+}
+
+function extractFunctionSignatures(content: string): Map<string, string> {
+	const signatures = new Map<string, string>()
+	const patterns = [
+		/(?:^|\s)(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)/gm,
+		/(?:^|\s)(?:export\s+)?const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>/gm,
+	]
+
+	for (const pattern of patterns) {
+		for (const match of content.matchAll(pattern)) {
+			const name = match[1]
+			const params = (match[2] || "").replace(/\s+/g, " ").trim()
+			if (name) {
+				signatures.set(name, `${name}(${params})`)
+			}
+		}
+	}
+
+	return signatures
+}
+
+function hasSemanticMismatchForAstRefactor(originalContent: string, newContent: string): boolean {
+	const oldExportLines = new Set(extractExportLines(originalContent))
+	const newExportLines = extractExportLines(newContent)
+	const hasNewExport = newExportLines.some((line) => !oldExportLines.has(line))
+
+	const oldClasses = extractClassNames(originalContent)
+	const newClasses = extractClassNames(newContent)
+	const hasNewClass = Array.from(newClasses).some((className) => !oldClasses.has(className))
+
+	const oldSigs = extractFunctionSignatures(originalContent)
+	const newSigs = extractFunctionSignatures(newContent)
+	const hasChangedSignature = Array.from(oldSigs.entries()).some(([name, oldSig]) => {
+		const newSig = newSigs.get(name)
+		return newSig !== undefined && newSig !== oldSig
+	})
+
+	return hasNewExport || hasNewClass || hasChangedSignature
+}
+
+async function runSemanticClassificationSanityCheck(input: GovernanceInput, targetFilePath?: string): Promise<void> {
+	if (input.toolName !== "write_to_file" || !targetFilePath) {
+		return
+	}
+
+	const mutationClass = input.toolParams?.mutation_class as SemanticMutationClass | undefined
+	if (mutationClass !== AST_REFACTOR) {
+		return
+	}
+
+	const proposedContent = input.toolParams?.content
+	if (typeof proposedContent !== "string") {
+		return
+	}
+
+	const absoluteTargetPath = path.resolve(input.task.cwd, targetFilePath)
+	let originalContent = ""
+
+	try {
+		originalContent = await fs.readFile(absoluteTargetPath, "utf-8")
+	} catch {
+		originalContent = ""
+	}
+
+	if (!hasSemanticMismatchForAstRefactor(originalContent, proposedContent)) {
+		return
+	}
+
+	const warning =
+		"Semantic Classification Warning: mutation_class=AST_REFACTOR appears inconsistent with diff signals (new export/new class/function signature change). Verify whether this should be INTENT_EVOLUTION."
+	console.warn(`[GovernanceService] ${warning}`)
+	throw new Error(warning)
+}
+
 async function readIntentIgnorePatterns(workspaceRoot: string): Promise<ReturnType<typeof ignore>> {
 	const ig = ignore()
 	const intentIgnorePath = path.join(workspaceRoot, ".intentignore")
@@ -103,6 +208,23 @@ export async function enforceGovernanceForTool(input: GovernanceInput): Promise<
 		return
 	}
 
+	if (input.toolName === "write_to_file") {
+		const proposedMutationClass = (input.toolParams?.mutation_class || "").trim()
+		if (!isValidMutationClass(proposedMutationClass)) {
+			throw new Error(
+				"Invalid mutation_class. You must classify this change as AST_REFACTOR or INTENT_EVOLUTION.",
+			)
+		}
+
+		if (!input.toolParams?.intent_id?.trim()) {
+			throw new Error("Missing intent_id for write_to_file governance approval.")
+		}
+
+		if (!input.toolParams?.path?.trim()) {
+			throw new Error("Missing path for write_to_file governance approval.")
+		}
+	}
+
 	const workspaceRoot = input.task.cwd
 	const target = resolveTargetFromTool(input.toolName, input.toolParams)
 	const normalizedTargetFilePath = target.filePath ? normalizePosixPath(target.filePath) : undefined
@@ -127,16 +249,34 @@ export async function enforceGovernanceForTool(input: GovernanceInput): Promise<
 		}
 	}
 
-	const intentId = input.activeIntent?.id ?? "UNSPECIFIED"
-	const action =
-		input.toolName === "write_to_file"
-			? "write_to_file"
-			: input.toolName === "apply_diff"
-				? "apply_diff"
-				: input.toolName
+	await runSemanticClassificationSanityCheck(input, normalizedTargetFilePath)
+
+	if (input.toolName === "write_to_file") {
+		const params = {
+			intent_id: input.toolParams?.intent_id || "",
+			mutation_class: input.toolParams?.mutation_class || "",
+			path: input.toolParams?.path || "",
+		}
+
+		const selection = await vscode.window.showWarningMessage(
+			`[GOVERNANCE] ${params.intent_id} requested an ${params.mutation_class} on ${params.path}. Approve?`,
+			{ modal: true },
+			APPROVE_LABEL,
+			REJECT_LABEL,
+		)
+
+		if (selection !== APPROVE_LABEL) {
+			throw new Error(buildRejectionPayload())
+		}
+
+		return
+	}
+
+	const intentId = input.activeIntent?.requirement_id ?? input.activeIntent?.id ?? "UNSPECIFIED"
+	const targetLabel = target.filePath ? getTargetLabel(target.filePath) : target.displayTarget
 
 	const selection = await vscode.window.showWarningMessage(
-		`Intent ${intentId} is requesting to ${action} on ${target.displayTarget}. Approve?`,
+		`[GOVERNANCE] ${intentId} requested an action on ${targetLabel}. Approve?`,
 		{ modal: true },
 		APPROVE_LABEL,
 		REJECT_LABEL,
