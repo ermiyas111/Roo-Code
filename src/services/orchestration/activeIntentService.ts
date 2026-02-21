@@ -465,6 +465,27 @@ export async function upsertActiveIntent(
 	return { path: activeIntentsPath, intent }
 }
 
+export async function removeActiveIntent(
+	workspaceRoot: string,
+	intentId: string,
+): Promise<{ path: string; removed: boolean }> {
+	const orchestrationDirPath = path.join(workspaceRoot, ".orchestration")
+	const activeIntentsPath = path.join(orchestrationDirPath, "active_intents.yaml")
+	await fs.mkdir(orchestrationDirPath, { recursive: true })
+
+	const { root, intents } = await readActiveIntentsYaml(activeIntentsPath)
+	const remaining = intents.filter((entry) => entry.id !== intentId)
+	const removed = remaining.length !== intents.length
+
+	const next = {
+		...root,
+		active_intents: remaining,
+	}
+
+	await fs.writeFile(activeIntentsPath, yaml.dump(next, { lineWidth: 0 }), "utf-8")
+	return { path: activeIntentsPath, removed }
+}
+
 export async function getCurrentActiveIntent(workspaceRoot: string): Promise<ActiveIntent | undefined> {
 	const activeIntentsPath = path.join(workspaceRoot, ".orchestration", "active_intents.yaml")
 	const { intents } = await readActiveIntentsYaml(activeIntentsPath)

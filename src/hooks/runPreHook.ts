@@ -2,6 +2,7 @@ import type { Task } from "../core/task/Task"
 import {
 	getCurrentActiveIntent,
 	markRequirementCompletedInTodo,
+	removeActiveIntent,
 	upsertActiveIntent,
 } from "../services/orchestration/activeIntentService"
 
@@ -35,17 +36,27 @@ export async function runPreHook(cline: Task, input: RunPreHookInput): Promise<v
 	}
 
 	if (activeIntent) {
-		await upsertActiveIntent(workspaceRoot, {
+		const baseIntentUpdate = {
 			...activeIntent,
 			task_id: cline.taskId,
 			task: cline.metadata.task ?? "",
 			tool_name: input.toolName,
 			tool_call_id: input.toolCallId ?? null,
 			updated_at: new Date().toISOString(),
-		})
-	}
+		}
 
-	if (input.toolName === "attempt_completion" && activeIntent?.id) {
-		await markRequirementCompletedInTodo(workspaceRoot, activeIntent.id)
+		await upsertActiveIntent(workspaceRoot, {
+			...baseIntentUpdate,
+		})
+
+		if (input.toolName === "attempt_completion") {
+			await markRequirementCompletedInTodo(workspaceRoot, activeIntent.id)
+			await upsertActiveIntent(workspaceRoot, {
+				...baseIntentUpdate,
+				status: "COMPLETED",
+				updated_at: new Date().toISOString(),
+			})
+			await removeActiveIntent(workspaceRoot, activeIntent.id)
+		}
 	}
 }
