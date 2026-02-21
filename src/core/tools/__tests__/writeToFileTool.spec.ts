@@ -274,7 +274,24 @@ describe("writeToFileTool", () => {
 				relativePath: testFilePath,
 				intentId: testIntentId,
 				mutationClass: testMutationClass,
+				newContent: testContent,
+				previousContent: undefined,
 			})
+		})
+	})
+
+	describe("intent map verification", () => {
+		it("announces intent map update message from post-write hook", async () => {
+			mockedRunPostWriteFileHook.mockResolvedValue({
+				intentMapMessage: "Intent Map updated: Added [FeatureService] to INT-001 mapping.",
+			} as any)
+
+			await executeWriteFileTool({}, { accessAllowed: true })
+
+			expect(mockCline.say).toHaveBeenCalledWith(
+				"text",
+				"Intent Map updated: Added [FeatureService] to INT-001 mapping.",
+			)
 		})
 	})
 

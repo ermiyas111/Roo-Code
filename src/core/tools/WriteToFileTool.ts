@@ -155,6 +155,7 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 
 		try {
 			task.consecutiveMistakeCount = 0
+			const previousContentForPostHook = fileExists ? task.diffViewProvider.originalContent : undefined
 
 			const provider = task.providerRef.deref()
 			const state = await provider?.getState()
@@ -228,11 +229,17 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 
 			if (relPath) {
 				await task.fileContextTracker.trackFileContext(relPath, "roo_edited" as RecordSource)
-				await runPostWriteFileHook(task, {
+				const postWriteResult = await runPostWriteFileHook(task, {
 					relativePath: relPath,
 					intentId,
 					mutationClass,
+					newContent,
+					previousContent: previousContentForPostHook,
 				})
+
+				if (postWriteResult?.intentMapMessage) {
+					await task.say("text", postWriteResult.intentMapMessage)
+				}
 			}
 
 			task.didEditFile = true
